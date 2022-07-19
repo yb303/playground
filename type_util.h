@@ -20,6 +20,8 @@ static constexpr std::array<T, sizeof...(Is)> seq_v = {Is...};
 
 // Size of tuple or seq
 
+static constexpr size_t npos = ~size_t(0);
+
 template <class _T>
 struct size;
 
@@ -247,6 +249,31 @@ using select_t = typename select<N, _T>::type;
 template <int N, class _T>
 static constexpr auto select_v = select<N, _T>::value;
 
+// Find the first type in tuple or int in sequence that Pred
+// The "returned" value is "end()" if not found
+
+template <class Haystack>
+static constexpr size_t end_v = size_v<Haystack>;
+
+template <class Haystack,
+          template <class, class> class Pred,
+          class PredParam,
+          bool Stop = (size_v<Haystack> == 0)> struct find_if;
+
+template <class Haystack, template <class, class> class Pred, class PredParam>
+struct find_if<Haystack, Pred, PredParam, true> {
+    static constexpr size_t value = 0;
+};
+
+template <class Haystack, template <class, class> class Pred, class PredParam>
+struct find_if<Haystack, Pred, PredParam, false> {
+    static constexpr size_t value = Pred<select_t<0, Haystack>, PredParam>::value ? 0
+                                    : (1 + find_if<skip_t<1, Haystack>, Pred, PredParam>::value);
+};
+
+template <class Haystack, template <class, class> class Pred, class PredParam>
+static constexpr size_t find_if_v = find_if<Haystack, Pred, PredParam>::value;
+
 // Reverse a tuple or sequence
 
 template <class _T> struct reverse;
@@ -315,6 +342,38 @@ struct reverse2<seq_t<T, Is...>> {
 template <class _T>
 using reverse2_t = typename reverse2<_T>::type;
 
+// Filter a tuple or sequence
+
+template <class _T, template <class, class> class Pred, class PredParam> struct filter;
+
+template <class T, template <class, class> class Pred, class PredParam>
+struct filter<std::tuple<T>, Pred, PredParam> {
+    using type = std::conditional<Pred<T, PredParam>::value, std::tuple<T>, std::tuple<>>;
+};
+
+template <class T, class... Ts, template <class, class> class Pred, class PredParam>
+struct filter<std::tuple<T, Ts...>, Pred, PredParam> {
+    using type = concat_t<
+                    typename filter<std::tuple<T>,     Pred, PredParam>::type,
+                    typename filter<std::tuple<Ts...>, Pred, PredParam>::type
+                >;
+};
+/*
+template <template <class, class> class Pred, class T, T I>
+struct filter<Pred, seq_t<T, I>> {
+    using type = std::conditional<Pred<seq_t<T, I>>::value, seq_t<T, I>, seq_t<T>>;
+};
+
+template <template <class, class> class Pred, class T, T I, T... Is>
+struct filter<Pred, seq_t<T, I, Is...>> {
+    using type = concat_t<
+                    typename filter<Pred, seq_t<T, I>>::type,
+                    typename filter<Pred, seq_t<T, Is...>>::type
+                >;
+};
+*/
+template <template <class> class Pred, class _T>
+using filter_t = typename filter<Pred, _T>::type;
 
 // Selection sort - O(N^2)
 
@@ -405,7 +464,28 @@ struct min_sz2<std::tuple<Ts...>> {
 template <class _T>
 using sz_sorted_t = typename selection_sort<min_sz2, _T>::type;
 
-//////////////
+// Type filter test
+
+template <class Haystack, class Needle>
+struct find {
+    static constexpr size_t value = find_if<Haystack, std::is_same, Needle>::value;
+};
+
+template <class Haystack, class Needle>
+static constexpr size_t find_v = find<Haystack, Needle>::value;
+
+template <class T, class _Tup>
+struct is_one_of {
+    static constexpr bool value = find_v<_Tup, T> != end_v<_Tup>;
+};
+
+template <class Haystack, class Needles>
+struct find_one_of {
+    static constexpr size_t value = find_if_v<Haystack, is_one_of, Needles>;
+};
+
+template <class Haystack, class Needles>
+constexpr size_t find_one_of_v = find_one_of<Haystack, Needles>::value;
 
 } // namespace t
 
@@ -414,9 +494,27 @@ template<class T>
 void ppp() {
     printf("%s\n", __PRETTY_FUNCTION__);
 }
+template<int I>
+void pppx(int i) {
+    printf("%s\n", __PRETTY_FUNCTION__);
+}
 
 int main() {
     using namespace t;
+
+    static_assert(find_if_v<std::tuple<char, int, long>, std::is_same, char>  == 0, "");
+    static_assert(find_if_v<std::tuple<char, int, long>, std::is_same, int>   == 1, "");
+    static_assert(find_if_v<std::tuple<char, int, long>, std::is_same, long>  == 2, "");
+    static_assert(find_if_v<std::tuple<char, int, long>, std::is_same, short> == 3, "");
+
+    static_assert(find_v<std::tuple<char, int, long>, char>  == 0, "");
+    static_assert(find_v<std::tuple<char, int, long>, int>   == 1, "");
+    static_assert(find_v<std::tuple<char, int, long>, long>  == 2, "");
+    static_assert(find_v<std::tuple<char, int, long>, short> == 3, "");
+
+    static_assert(find_one_of_v<std::tuple<char, int, long>, std::tuple<short>>       == 3, "");
+    static_assert(find_one_of_v<std::tuple<char, int, long>, std::tuple<short, int>>  == 1, "");
+    static_assert(find_one_of_v<std::tuple<char, int, long>, std::tuple<short, long>> == 2, "");
 
     //
     // tuple
